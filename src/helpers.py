@@ -25,12 +25,13 @@ def fetch_category_ids(economic_api):
     return category_ids
 
 
-def fetch_series_data_for_categories(economic_api, category_ids_list):
+def fetch_series_data_for_categories(economic_api, category_ids_list, date_string):
     series_data_objects = {}
 
     for category_id in set(category_ids_list):
         series_data = economic_api.get_series_in_category(
             category_id=category_id, 
+            realtime_start=date_string,
             file_type='json')
         
         series_data_objects[category_id] = series_data

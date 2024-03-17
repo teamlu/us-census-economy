@@ -22,13 +22,14 @@ def main():
 
     # Initialize api manager
     economic_api = EconomicDataAPI(API_KEY)
+    date_start_input = input("Enter series start date, as YYYY-MM-DD: ")
     
     # Gather unique identifiers for categories based on prompt
     category_ids_list = fetch_category_ids(economic_api)
     print(category_ids_list)
 
     # Compile economic data based on the identified categories
-    all_series = fetch_series_data_for_categories(economic_api, category_ids_list)
+    all_series = fetch_series_data_for_categories(economic_api, category_ids_list, date_start_input)
 
     # Organize the economic data into dataframes
     category_dataframes = convert_to_dataframes(all_series)
