@@ -1,0 +1,191 @@
+---
+title: "Assessment of Construction Segments"
+output: html_document
+date: "2024-03-17"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Let's do this!
+
+```{r}
+# Environment
+library(tidyverse)
+library(lubridate)
+```
+
+## Inspect categories
+
+-   Spend categories: Which sub-groups will we compare?
+
+```{r}
+# Load construction categories
+summary_employees_and_earnings <- read_csv(
+  "../datasets/generated_by_main/category_dataframe_0.csv")
+summary_total_spend <- read_csv(
+  "../datasets/generated_by_main/category_dataframe_1.csv")
+summary_producer_price_index <- read_csv(
+  "../datasets/generated_by_main/category_dataframe_2.csv")
+
+# Identify category IDs to extract observational data
+summary_total_spend %>% 
+  filter(seasonal_adjustment_short == 'SAAR') %>% 
+  filter(units == 'Millions of Dollars') %>% 
+  filter(!grepl('Public|Private|in the United States', title)) %>% 
+  select(id, title)
+```
+
+## Prepare Observation Data
+
+With the IDs of the construction segments, I pulled the observation data
+from the FRED API and prepared them as CSVs in Python. They will be
+loaded here for analysis.
+
+```{r}
+# Bulk load observation files
+csv_files <- list.files(path = "../datasets/generated_by_main/", 
+                        pattern = "^observation_dataframe_.*\\.csv$")
+list_of_dfs <- lapply(
+  csv_files, 
+  function(file) read.csv(file.path("../datasets/generated_by_main/", file)))
+
+# Bind all construction segments
+df_total_spend <- bind_rows(list_of_dfs)
+
+# Format total spend data
+df_total_spend <- df_total_spend %>% 
+  mutate(description = str_replace(description, "Total Construction Spending: ", ""),
+         year = year(date)) %>% 
+  filter(realtime_end == '9999-12-31') %>% 
+  select(code, description, date, year, value)
+
+# Set current year
+current_year <- year(Sys.Date())
+
+# Remove files from env
+rm(csv_files)
+rm(list_of_dfs)
+```
+
+## Exploration
+
+```{r}
+# Date range of available data
+df_total_spend %>% 
+  group_by(description) %>%
+  summarise(earliest_date = min(date),
+            latest_date = max(date))
+
+# Calculate total value for varying N years for all segments
+df_total_spend %>% 
+  group_by(description) %>%
+  filter(year >= (current_year - 3)) %>%
+  summarise(total_3yr = sum(value)) %>% 
+  arrange(desc(total_3yr))
+
+df_total_spend %>% 
+  group_by(description) %>%
+  filter(year >= (current_year - 5)) %>%
+  summarise(total_5yr = sum(value)) %>% 
+  arrange(desc(total_5yr))
+
+df_total_spend %>% 
+  group_by(description) %>%
+  filter(year >= (current_year - 10)) %>%
+  summarise(total_10yr = sum(value)) %>% 
+  arrange(desc(total_10yr))
+
+df_total_spend %>% 
+  group_by(description) %>%
+  filter(year >= (current_year - 20)) %>%
+  summarise(total_20yr = sum(value)) %>% 
+  arrange(desc(total_20yr))
+```
+
+-   We have at least 22 years of data for all segments.
+-   Next steps are to determine metrics for size and growth.
+
+For *size*, I want a look back period of 5 years to understand current
+market dynamics. I will also look at 10 years to capture a broader view
+of long-term market share changes and trends.
+
+For *growth*, I think the last 3 years are ideal for seeing emerging
+growth trends and identifying sectors are gaining momentum. However, I
+will also look at the last 5 year window which serves as a common
+reference point in the narrative.
+
+```{r}
+# Aggregate segment spend, minus overlapping categories
+overall_total_5yr <- df_total_spend %>%
+  filter(year >= (current_year - 5), 
+         !description %in% c("Total Construction Spending", 
+                             "Nonresidential")
+         ) %>%
+  summarise(total_5yr = sum(value)) %>%
+  pull(total_5yr)
+
+overall_total_10yr <- df_total_spend %>%
+  filter(year >= (current_year - 10), 
+         !description %in% c("Total Construction Spending", "Nonresidential")) %>%
+  summarise(total_10yr = sum(value)) %>%
+  pull(total_10yr)
+
+# Construct metrics for size and growth
+df_size_growth <- df_total_spend %>%
+  group_by(description) %>%
+  summarise(
+    # Size calculations: need `overall_total_*_yr` for share of construction
+    total_value_5yr = sum(value[year >= (current_year - 5)]),
+    total_value_10yr = sum(value[year >= (current_year - 10)]),
+    size_percent_5yr = (total_value_5yr / overall_total_5yr) * 100,
+    size_percent_10yr = (total_value_10yr / overall_total_10yr) * 100,
+    # Growth calculations: need `start` + `end` values for each segment for CAGR
+    start_value_3yr = first(value[year == (current_year - 3)]),
+    end_value_3yr = last(value[year == current_year]),
+    start_value_5yr = first(value[year == (current_year - 5)]),
+    end_value_5yr = last(value[year == current_year]),
+    CAGR_3yr = if_else(end_value_3yr != 0 & start_value_3yr != 0, 
+                       ((end_value_3yr/start_value_3yr)^(1/3) - 1) * 100, NA_real_),
+    CAGR_5yr = if_else(end_value_5yr != 0 & start_value_5yr != 0, 
+                       ((end_value_5yr/start_value_5yr)^(1/5) - 1) * 100, NA_real_)
+  ) %>%
+  filter(!is.na(CAGR_3yr), 
+         !is.na(CAGR_5yr), 
+         !description %in% c("Total Construction Spending", "Nonresidential")) %>% 
+  mutate_if(is.numeric, round, 2)
+
+# Format summary table, by construction segment
+(
+  segment_summary <- df_size_growth %>% 
+    select(segment = description,
+           market_share_5yr = size_percent_5yr,
+           market_share_10yr = size_percent_10yr,
+           growth_rate_3yr = CAGR_3yr,
+           growth_rate_5yr = CAGR_5yr) %>% 
+    arrange(desc(market_share_5yr))
+  )
+```
+## ANALYSIS PLAN
+
+0.  Preparation
+    -   Filter to earliest common date across all segments
+    -   Annualize numbers
+    -   Code: Residential vs Non-Residential vs NA
+1.  Size, %: Who are the largest segments in construction? How big is
+    residential? Who are the biggest in non-residential, outside of
+    commercial?
+2.  Growth, %: Who is growing faster than the average?
+3.  Labor, \# of employees: Are any segments facing greater deficits of
+    workers, relative to spend (make assumptions)? And are mean wages
+    declining faster in some segments? Might need to recode or remove
+    groups.
+4.  Materials, PPI: Are costs for sub-contractors rising in some
+    segments faster than others?
+
+Looking for segments with higher size, higher growth, lower employees,
+and higher materials.
+
+## SCRATCH
+
+PPI - Producer Price Index by Industry: New Office Building Construction

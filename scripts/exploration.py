@@ -29,20 +29,22 @@ print(categories_data)
 
 series_in_category_data = economic_api.get_series_in_category(
     # category_id=32436, 
-    category_id=32310, 
-    # category_id=33580, 
+    # category_id=32310, 
+    # category_id=33580,
+    category_id=33589, # PPI construction
     file_type='json')
 print(series_in_category_data)
 
+economic_data = economic_api.get_economic_series(
+    # series_id='TTLCONS', 
+    # series_id='TLHLTHCONS', # Health Care
+    series_id='PCU236224236224', # Producer Price Index: New Health Care Building Construction
+    file_type='json',
+    realtime_start = '2011-01-01'
+    )
+print(economic_data)
 
-# Low Priority: return series by series_id   
-
-# economic_data = economic_api.get_economic_series(
-#     # series_id='TTLCONS', 
-#     series_id='CES2000000003',
-#     file_type='json'
-#     )
-# print(economic_data)
+print(economic_api.get_observations('PCU236224236224', realtime_start='2011-01-01'))
 
 # Low Priority: return category children by category_id
 
