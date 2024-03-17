@@ -1,5 +1,5 @@
 ---
-title: "Assessment of Construction Segments"
+title: "Construction Market Analysis"
 output: html_document
 date: "2024-03-17"
 editor_options: 
@@ -7,28 +7,22 @@ editor_options:
     wrap: 72
 ---
 
-# Let's do this!
+## Preparation
 
 ```{r}
-# Environment
+# Load libraries
 library(tidyverse)
 library(lubridate)
+library(tools)
 ```
 
-## Inspect categories
-
--   Spend categories: Which sub-groups will we compare?
-
 ```{r}
-# Load construction categories
-summary_employees_and_earnings <- read_csv(
-  "../datasets/generated_by_main/category_dataframe_0.csv")
-summary_total_spend <- read_csv(
-  "../datasets/generated_by_main/category_dataframe_1.csv")
-summary_producer_price_index <- read_csv(
-  "../datasets/generated_by_main/category_dataframe_2.csv")
+# Load construction categories from CSV files
+summary_employees_and_earnings <- read_csv("../datasets/generated_by_main/category_dataframe_0.csv")
+summary_total_spend <- read_csv("../datasets/generated_by_main/category_dataframe_1.csv")
+summary_producer_price_index <- read_csv("../datasets/generated_by_main/category_dataframe_2.csv")
 
-# Identify category IDs to extract observational data
+# Identify relevant category IDs for further analysis, excluding broad aggregates
 summary_total_spend %>% 
   filter(seasonal_adjustment_short == 'SAAR') %>% 
   filter(units == 'Millions of Dollars') %>% 
@@ -36,39 +30,42 @@ summary_total_spend %>%
   select(id, title)
 ```
 
-## Prepare Observation Data
+-   With the above IDs for segments of interest, I pulled the relevant
+    observation data from the FRED API and transformed them into CSVs
+    (Python).
 
-With the IDs of the construction segments, I pulled the observation data
-from the FRED API and prepared them as CSVs in Python. They will be
-loaded here for analysis.
+-   Here, I load those CSVs with economic data across segments to
+    prepare analysis.
 
-```{r}
+```{r message=FALSE}
 # Bulk load observation files
-csv_files <- list.files(path = "../datasets/generated_by_main/", 
-                        pattern = "^observation_dataframe_.*\\.csv$")
+csv_files <- list.files(
+  path = "../datasets/generated_by_main/", 
+  pattern = "^observation_dataframe_.*\\.csv$"
+  )
 list_of_dfs <- lapply(
-  csv_files, 
-  function(file) read.csv(file.path("../datasets/generated_by_main/", file)))
+  X = csv_files, 
+  FUN = function(file) read_csv(file.path("../datasets/generated_by_main/", file))
+  )
 
-# Bind all construction segments
+# Bind data for all construction segments
 df_total_spend <- bind_rows(list_of_dfs)
 
-# Format total spend data
+# Format the total spend data
 df_total_spend <- df_total_spend %>% 
   mutate(description = str_replace(description, "Total Construction Spending: ", ""),
          year = year(date)) %>% 
   filter(realtime_end == '9999-12-31') %>% 
   select(code, description, date, year, value)
 
-# Set current year
+# Set current year for time-based filtering later
 current_year <- year(Sys.Date())
 
-# Remove files from env
-rm(csv_files)
-rm(list_of_dfs)
+# Cleanup: Remove temp variables from environment
+rm(list = c("csv_files", "list_of_dfs"))
 ```
 
-## Exploration
+## Exploratory Data Analysis (EDA)
 
 ```{r}
 # Date range of available data
@@ -105,29 +102,36 @@ df_total_spend %>%
 
 -   We have at least 22 years of data for all segments.
 -   Next steps are to determine metrics for size and growth.
+    -   For *size*, I want a look back period of 5 years to understand
+        current market dynamics. I will also look at 10 years to capture
+        a broader view of long-term market share changes and trends.
+    -   For *growth*, I think the last 3 years are ideal for seeing
+        emerging growth trends and identifying sectors are gaining
+        momentum. However, I will also look at the last 5 year window
+        which serves as a common reference point (together with size /
+        market share) in the narrative.
 
-For *size*, I want a look back period of 5 years to understand current
-market dynamics. I will also look at 10 years to capture a broader view
-of long-term market share changes and trends.
-
-For *growth*, I think the last 3 years are ideal for seeing emerging
-growth trends and identifying sectors are gaining momentum. However, I
-will also look at the last 5 year window which serves as a common
-reference point in the narrative.
+## Metrics Construction
 
 ```{r}
+# Determine categories to exclude for analysis
+category_blacklist <- c("Total Construction Spending",
+                        "Nonresidential", # Comment out if including `Nonresidential`
+                        "Residential"    # Comment out if including `Residential`
+                        )
+
 # Aggregate segment spend, minus overlapping categories
 overall_total_5yr <- df_total_spend %>%
   filter(year >= (current_year - 5), 
-         !description %in% c("Total Construction Spending", 
-                             "Nonresidential")
+         !description %in% category_blacklist
          ) %>%
   summarise(total_5yr = sum(value)) %>%
   pull(total_5yr)
 
 overall_total_10yr <- df_total_spend %>%
   filter(year >= (current_year - 10), 
-         !description %in% c("Total Construction Spending", "Nonresidential")) %>%
+         !description %in% category_blacklist
+         ) %>%
   summarise(total_10yr = sum(value)) %>%
   pull(total_10yr)
 
@@ -152,7 +156,8 @@ df_size_growth <- df_total_spend %>%
   ) %>%
   filter(!is.na(CAGR_3yr), 
          !is.na(CAGR_5yr), 
-         !description %in% c("Total Construction Spending", "Nonresidential")) %>% 
+         !description %in% category_blacklist
+         ) %>% 
   mutate_if(is.numeric, round, 2)
 
 # Format summary table, by construction segment
@@ -165,13 +170,214 @@ df_size_growth <- df_total_spend %>%
            growth_rate_5yr = CAGR_5yr) %>% 
     arrange(desc(market_share_5yr))
   )
+
+# Sanity checks
+sum(segment_summary$market_share_5yr)
+sum(segment_summary$market_share_10yr)
 ```
-## ANALYSIS PLAN
+
+-   Comparing `Residential` vs `Nonresidential`
+    -   market_share_5yr (29.56 vs 35.48)
+    -   market_share_10yr (27.85 vs 36.32)
+    -   growth_rate_3yr (6.36 vs 11.94)
+    -   growth_rate_5yr (11.75 vs 9.02)
+
+## Analysis Functions
+
+```{r}
+########################
+## PREPARE PLOT TABLE ##
+########################
+prepare_plot_table <- function(df, metric_name, dimension_name, filter_field = NULL) {
+  if (!is.null(filter_field)) {
+    df <- df %>% filter(segment != filter_field)
+  }
+  
+  mean_metric <- mean(df[[metric_name]], na.rm = TRUE)
+  sd_metric <- sd(df[[metric_name]], na.rm = TRUE)
+  
+  df <- df %>%
+    mutate(
+      color_group = case_when(
+        .data[[metric_name]] > mean_metric + sd_metric ~ "above_1_sd",
+        .data[[metric_name]] < mean_metric - sd_metric ~ "below_1_sd",
+        TRUE ~ "between"
+      ),
+      !!sym(dimension_name) := forcats::fct_reorder(.data[[dimension_name]],
+                                                    .data[[metric_name]], 
+                                                    .desc = FALSE)
+    )
+  
+  return(df)
+}
+
+###############################
+## CREATE HORIZONTAL BARPLOT ##
+###############################
+create_horizontal_barplot <- function(df,
+                                      metric_name,
+                                      dimension_name,
+                                      grouping_var = NULL
+                                      ) {
+
+  p <- ggplot(df, aes(x = .data[[dimension_name]],
+                      y = .data[[metric_name]],
+                      fill = color_group)) +
+    geom_bar(stat = 'identity') +
+    geom_text(aes(label = sprintf("%.1f", .data[[metric_name]]),
+                  y = .data[[metric_name]]),
+              position = position_dodge(width = 0.9),
+              hjust = -0.2, size = 3.5, color = "grey60") +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 80)) +
+    scale_fill_manual(values = c("above_1_sd" = "#17A6F7FF",
+                                 "below_1_sd" = "#17A6F766",
+                                 "between" = "gray")) +
+    coord_flip() +
+    labs(
+      x = toTitleCase(gsub("_", " ", dimension_name)),
+      y = toTitleCase(gsub("_", " ", metric_name))
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none", text = element_text(size = 12, color="grey20"))
+
+  if (!is.null(grouping_var)) {
+    p <- p + facet_wrap(as.formula(paste("~", grouping_var)))
+  }
+
+  return(p)
+}
+```
+
+## Market Share Analysis
+
+```{r}
+# Window: 5 Year
+table_market_share_5yr <- prepare_plot_table(df = segment_summary, 
+                                             metric_name = "market_share_5yr", 
+                                             dimension_name = "segment")
+
+(
+  plot_market_share_5yr <- create_horizontal_barplot(df = table_market_share_5yr,
+                                                   metric_name = "market_share_5yr",
+                                                   dimension_name = "segment")
+  )
+
+# Window: 10 Year
+table_market_share_10yr <- prepare_plot_table(df = segment_summary, 
+                                             metric_name = "market_share_10yr", 
+                                             dimension_name = "segment")
+
+(
+  plot_market_share_10yr <- create_horizontal_barplot(df = table_market_share_10yr,
+                                                   metric_name = "market_share_10yr",
+                                                   dimension_name = "segment")
+  )
+```
+
+## Growth Trend Analysis
+
+```{r}
+# Window: 3 Year
+table_growth_rate_3yr <- prepare_plot_table(df = segment_summary, 
+                                             metric_name = "growth_rate_3yr", 
+                                             dimension_name = "segment")
+
+(
+  plot_growth_rate_3yr <- create_horizontal_barplot(df = table_growth_rate_3yr,
+                                                   metric_name = "growth_rate_3yr",
+                                                   dimension_name = "segment")
+  )
+
+# Window: 5 Year
+table_growth_rate_5yr <- prepare_plot_table(df = segment_summary, 
+                                             metric_name = "growth_rate_5yr", 
+                                             dimension_name = "segment")
+
+(
+  plot_growth_rate_5yr <- create_horizontal_barplot(df = table_growth_rate_5yr,
+                                                   metric_name = "growth_rate_5yr",
+                                                   dimension_name = "segment")
+  )
+```
+
+## Material Costs and Price Index Analysis
+https://fred.stlouisfed.org/release/tables?rid=46&eid=134088
+
+-   A high PPI indicates:
+    -   (+) selling prices for new industrial building construction are
+        increasing
+    -   (+) which means this sub-segment is healthy
+    -   (+) and strong demand allowing builders and subcontractors to
+        charge more
+    -   (+) thus, potentially higher budget allocations towards our SaaS
+-   Gonna assume that `PPI for New Industrial Building Construction` is
+    reasonable proxy of the broader manufacturing segment's price
+    changes over time.
+
+```{r}
+# To save time, I'll input 5yr `start` + `end` values for PPI manually
+construction_data <- data.frame(
+  new_building_construction = c(
+    "Industrial", # https://fred.stlouisfed.org/series/PCU236211236211
+    "Warehouse",  # https://fred.stlouisfed.org/series/PCU236221236221
+    "School",     # https://fred.stlouisfed.org/series/PCU236222236222
+    "Office",     # https://fred.stlouisfed.org/series/PCU236223236223
+    "Health Care" # https://fred.stlouisfed.org/series/PCU236224236224
+    ),
+  start = c(132.7, 155.5, 165.9, 140.6, 115.3),
+  end = c(193.3, 232.3, 224.5, 205.1, 157.9)
+)
+
+# [1 Year for exploration]
+# construction_data <- data.frame(
+#   new_building_construction = c(
+#     "Industrial", # https://fred.stlouisfed.org/series/PCU236211236211
+#     "Warehouse",  # https://fred.stlouisfed.org/series/PCU236221236221
+#     "School",     # https://fred.stlouisfed.org/series/PCU236222236222
+#     "Office",     # https://fred.stlouisfed.org/series/PCU236223236223
+#     "Health Care" # https://fred.stlouisfed.org/series/PCU236224236224
+#     ),
+#   start = c(194.3, 235.1, 227.1, 208.0, 160.1),
+#   end = c(193.3, 232.3, 224.5, 205.1, 157.9)
+# )
+
+ppi_summary <- construction_data %>%
+  mutate(percent_change_in_producer_price_index_5yr = ((end - start) / start) * 100) %>% 
+  arrange(desc(percent_change_in_producer_price_index_5yr))
+
+# Window: 1 year
+table_ppi_5yr <- prepare_plot_table(
+  df = ppi_summary, 
+  metric_name = "percent_change_in_producer_price_index_5yr", 
+  dimension_name = "new_building_construction") 
+  # mutate(color_group = ifelse(
+  #   percent_change_in_producer_price_index_5yr > 45, 'above_1_sd', 'below_1_sd'))
+
+(
+  plot_ppi_5yr <- create_horizontal_barplot(
+    df = table_ppi_5yr,
+    metric_name = "percent_change_in_producer_price_index_5yr",
+    dimension_name = "new_building_construction")
+  )
+```
+
+## Labor Market Dynamics
+
+-   It seems that employee count and wage data is only available at the
+    residential vs non-residential level.
+    <https://fred.stlouisfed.org/release/tables?rid=50&eid=4881#snid=4899>
+
+-   Since I already know Residential is less appealing than Non-Residential's Manufacturing sub-segment, I will forgo this part on labor market dynamics.
+
+
+# APPENDIX
+
+## Analysis Plan
 
 0.  Preparation
     -   Filter to earliest common date across all segments
     -   Annualize numbers
-    -   Code: Residential vs Non-Residential vs NA
+    -   Bin Residential vs Non-Residential vs NA
 1.  Size, %: Who are the largest segments in construction? How big is
     residential? Who are the biggest in non-residential, outside of
     commercial?
@@ -185,7 +391,3 @@ df_size_growth <- df_total_spend %>%
 
 Looking for segments with higher size, higher growth, lower employees,
 and higher materials.
-
-## SCRATCH
-
-PPI - Producer Price Index by Industry: New Office Building Construction
