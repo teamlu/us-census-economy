@@ -116,8 +116,8 @@ df_total_spend %>%
 ```{r}
 # Determine categories to exclude for analysis
 category_blacklist <- c("Total Construction Spending",
-                        "Nonresidential", # Comment out if including `Nonresidential`
-                        "Residential"    # Comment out if including `Residential`
+                        "Nonresidential" # Comment out if including `Nonresidential`
+                        # "Residential"    # Comment out if including `Residential`
                         )
 
 # Aggregate segment spend, minus overlapping categories
@@ -175,12 +175,6 @@ df_size_growth <- df_total_spend %>%
 sum(segment_summary$market_share_5yr)
 sum(segment_summary$market_share_10yr)
 ```
-
--   Comparing `Residential` vs `Nonresidential`
-    -   market_share_5yr (29.56 vs 35.48)
-    -   market_share_10yr (27.85 vs 36.32)
-    -   growth_rate_3yr (6.36 vs 11.94)
-    -   growth_rate_5yr (11.75 vs 9.02)
 
 ## Analysis Functions
 
@@ -251,10 +245,31 @@ create_horizontal_barplot <- function(df,
 ## Market Share Analysis
 
 ```{r}
+# Including `Residential`
+prepare_plot_table(df = segment_summary, 
+                   metric_name = "market_share_5yr", 
+                   dimension_name = "segment") %>% 
+  create_horizontal_barplot(df = .,
+                   metric_name = "market_share_5yr",
+                   dimension_name = "segment")
+
+# Including `Residential`
+prepare_plot_table(df = segment_summary, 
+                   metric_name = "growth_rate_5yr", 
+                   dimension_name = "segment") %>% 
+  mutate(color_group = ifelse(segment == 'Residential', "above_1_sd", "between")) %>% 
+  create_horizontal_barplot(df = .,
+                   metric_name = "growth_rate_5yr",
+                   dimension_name = "segment")
+```
+
+```{r}
+# Excluding `Residential`
 # Window: 5 Year
 table_market_share_5yr <- prepare_plot_table(df = segment_summary, 
                                              metric_name = "market_share_5yr", 
-                                             dimension_name = "segment")
+                                             dimension_name = "segment", 
+                                             filter_field = "Residential")
 
 (
   plot_market_share_5yr <- create_horizontal_barplot(df = table_market_share_5yr,
@@ -265,7 +280,8 @@ table_market_share_5yr <- prepare_plot_table(df = segment_summary,
 # Window: 10 Year
 table_market_share_10yr <- prepare_plot_table(df = segment_summary, 
                                              metric_name = "market_share_10yr", 
-                                             dimension_name = "segment")
+                                             dimension_name = "segment", 
+                                             filter_field = "Residential")
 
 (
   plot_market_share_10yr <- create_horizontal_barplot(df = table_market_share_10yr,
@@ -277,10 +293,12 @@ table_market_share_10yr <- prepare_plot_table(df = segment_summary,
 ## Growth Trend Analysis
 
 ```{r}
+# Excluding `Residential`
 # Window: 3 Year
 table_growth_rate_3yr <- prepare_plot_table(df = segment_summary, 
-                                             metric_name = "growth_rate_3yr", 
-                                             dimension_name = "segment")
+                                            metric_name = "growth_rate_3yr", 
+                                            dimension_name = "segment",
+                                            filter_field = "Residential")
 
 (
   plot_growth_rate_3yr <- create_horizontal_barplot(df = table_growth_rate_3yr,
@@ -291,7 +309,8 @@ table_growth_rate_3yr <- prepare_plot_table(df = segment_summary,
 # Window: 5 Year
 table_growth_rate_5yr <- prepare_plot_table(df = segment_summary, 
                                              metric_name = "growth_rate_5yr", 
-                                             dimension_name = "segment")
+                                             dimension_name = "segment",
+                                            filter_field = "Residential")
 
 (
   plot_growth_rate_5yr <- create_horizontal_barplot(df = table_growth_rate_5yr,
