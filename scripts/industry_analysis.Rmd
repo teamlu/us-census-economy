@@ -2,6 +2,7 @@
 title: "Construction Market Analysis"
 output: html_document
 date: "2024-03-17"
+author: "Tim Lu"
 editor_options: 
   markdown: 
     wrap: 72
@@ -110,6 +111,35 @@ df_total_spend %>%
         momentum. However, I will also look at the last 5 year window
         which serves as a common reference point (together with size /
         market share) in the narrative.
+
+```{r}
+df_total_spend %>%
+  filter(year >= (current_year - 8),
+         description %in% c("Total Construction Spending", "Nonresidential", "Residential")
+         ) %>%
+  mutate(value = value / 1000000,
+         description = ifelse(description == "Total Construction Spending",
+                              "Total", description)) %>% 
+  ggplot(aes(x = year, y = value, color = description, group = description, linetype = description)) +
+  geom_smooth(se = FALSE, method = "loess") +
+  theme_minimal() +
+  labs(
+    y = "Share of Construction Spend ($ Trillion)",
+    x = "",
+    color = "Segment", linetype = "Segment"
+  ) +
+  scale_color_manual(values = c(
+    "Total" = "black",
+    "Nonresidential" = "black",
+    "Residential" = "#17A6F7"
+  )) +
+  scale_linetype_manual(values = c(
+    "Total" = "dashed",
+    "Nonresidential" = "solid",
+    "Residential" = "solid"
+  )) +
+  theme(legend.position = "bottom") 
+```
 
 ## Metrics Construction
 
@@ -320,7 +350,8 @@ table_growth_rate_5yr <- prepare_plot_table(df = segment_summary,
 ```
 
 ## Material Costs and Price Index Analysis
-https://fred.stlouisfed.org/release/tables?rid=46&eid=134088
+
+<https://fred.stlouisfed.org/release/tables?rid=46&eid=134088>
 
 -   A high PPI indicates:
     -   (+) selling prices for new industrial building construction are
@@ -347,30 +378,15 @@ construction_data <- data.frame(
   end = c(193.3, 232.3, 224.5, 205.1, 157.9)
 )
 
-# [1 Year for exploration]
-# construction_data <- data.frame(
-#   new_building_construction = c(
-#     "Industrial", # https://fred.stlouisfed.org/series/PCU236211236211
-#     "Warehouse",  # https://fred.stlouisfed.org/series/PCU236221236221
-#     "School",     # https://fred.stlouisfed.org/series/PCU236222236222
-#     "Office",     # https://fred.stlouisfed.org/series/PCU236223236223
-#     "Health Care" # https://fred.stlouisfed.org/series/PCU236224236224
-#     ),
-#   start = c(194.3, 235.1, 227.1, 208.0, 160.1),
-#   end = c(193.3, 232.3, 224.5, 205.1, 157.9)
-# )
-
 ppi_summary <- construction_data %>%
   mutate(percent_change_in_producer_price_index_5yr = ((end - start) / start) * 100) %>% 
   arrange(desc(percent_change_in_producer_price_index_5yr))
 
-# Window: 1 year
+# Window: 5 year
 table_ppi_5yr <- prepare_plot_table(
   df = ppi_summary, 
   metric_name = "percent_change_in_producer_price_index_5yr", 
   dimension_name = "new_building_construction") 
-  # mutate(color_group = ifelse(
-  #   percent_change_in_producer_price_index_5yr > 45, 'above_1_sd', 'below_1_sd'))
 
 (
   plot_ppi_5yr <- create_horizontal_barplot(
@@ -386,8 +402,9 @@ table_ppi_5yr <- prepare_plot_table(
     residential vs non-residential level.
     <https://fred.stlouisfed.org/release/tables?rid=50&eid=4881#snid=4899>
 
--   Since I already know Residential is less appealing than Non-Residential's Manufacturing sub-segment, I will forgo this part on labor market dynamics.
-
+-   Since I already know Residential is less appealing than
+    Non-Residential's Manufacturing sub-segment, I will forgo this part
+    on labor market dynamics.
 
 # APPENDIX
 
